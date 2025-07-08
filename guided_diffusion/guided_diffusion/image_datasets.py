@@ -143,7 +143,7 @@ class ImageDataset(Dataset):
         arr = arr.astype(np.float32) / 127.5 - 1
         arr = np.transpose(arr, [2, 0, 1])
         # make mask binary
-        mask_arr = np.where(mask_arr > 0, 1, -1)
+        mask_arr = np.where(mask_arr > 100, 1, -1)
         
         # arr.shape = (3, 256, 256), mask_arr.shape = (256, 256)
         # add mask as 4th channel
@@ -152,7 +152,7 @@ class ImageDataset(Dataset):
         out_dict = {}
         if self.local_classes is not None:
             out_dict["y"] = np.array(self.local_classes[idx], dtype=np.int64)
-        return arr, mask_arr, out_dict
+        return arr, mask_arr, out_dict#, img_path, mask_path
 
 
 def center_crop_arr(pil_image, image_size):

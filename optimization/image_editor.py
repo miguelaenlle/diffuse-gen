@@ -49,6 +49,10 @@ class ImageEditor:
         self.ranked_results_path = Path(self.args.output_path, base_dir)
         self.root_dir = Path(__file__).parent.parent.as_posix()
 
+        # Set default device based on args.gpu_id
+        if self.args.gpu_id is not None:
+            torch.cuda.set_device(self.args.gpu_id)
+
         os.makedirs(self.ranked_results_path, exist_ok=True)
         
         logger.configure(dir=str(self.ranked_results_path))
@@ -66,7 +70,7 @@ class ImageEditor:
         self.model_config = model_and_diffusion_defaults()
         self.model_config.update(
             {
-                "attention_resolutions": "16",
+                "attention_resolutions":"32,16,8",
                 "class_cond": False,
                 "diffusion_steps": 1000,
                 "rescale_timesteps": True,
@@ -549,16 +553,16 @@ class ImageEditor:
             curr.extend([sample.cpu().numpy() for sample in samples])
             # image, mask = curr[-1][..., :3], curr[-1][..., -1:]
             # import matplotlib.pyplot as plt
-            # plt.imshow(np.array(image))
+            # plt.imshow(np.array(image)) 
             # plt.savefig(f"image_{it}.png")
             # plt.imshow(np.array(mask), cmap="gray")
             # plt.savefig(f"mask_{it}.png")
             all_images[style_img_path] = curr
 
-            if it % 50 == 0:
+            if it % 3 == 0:
                 logger.log(f"Saving {it} images...")
                 self._save(all_images, styled_images)
 
-        if it % 50 != 0: # prevent saving twice
+        if it % 3 != 0: # prevent saving twice
             logger.log(f"Saving {it} images...")        
             self._save(all_images, styled_images)

@@ -2,10 +2,12 @@
 Train a diffusion model on images.
 """
 import os
+import torch
 import datetime
 import cv2
 import numpy as np
 import argparse
+import matplotlib.pyplot as plt
 # import blobfile as bf
 from guided_diffusion import dist_util, logger
 from guided_diffusion.image_datasets import load_data
@@ -25,6 +27,9 @@ def main():
     dist_util.setup_dist()
     if args.out_dir is not None:
         logger.configure(dir=os.path.join(args.out_dir, datetime.datetime.now().strftime("diffgen-%Y-%m-%d-%H-%M")))
+
+        # Create the output directory if it doesn't exist
+        os.makedirs(args.out_dir, exist_ok=True)
     else:
         logger.configure()
 
@@ -45,22 +50,29 @@ def main():
     )
     # batch.shape = (batch_size, 3, image_size, image_size)
     # Run the following to see what the batch looks like:
-    # batch, mask, cond = next(data)
-    # print(batch.shape)
-    # print(mask.shape)
-    # print(batch.min())
-    # print(batch.max())
-    # print(mask.min())
-    # print(mask.max())
+    # for i in range(10):
+    #     batch, mask, cond, img_path, mask_path = next(data)
+    #     print(batch.shape)
+    #     print(mask.shape)
+    #     print(batch.min())
+    #     print(batch.max())
+    #     print(mask.min())
+    #     print(mask.max())
 
-    # import matplotlib.pyplot as plt
-    # img = batch[0].permute(1, 2, 0)
-    # plt.imshow(img/255)
-    # plt.savefig("img.png")
-    # plt.imshow(img / 127.5 - 1)
-    # plt.savefig("img1.png")
-    # plt.imshow(mask[0], cmap="gray")
-    # plt.savefig("mask")
+    #     img = batch[0].permute(1, 2, 0)
+
+    #     img_scaled = ((img + 1) * 127.5).clamp(0, 255).to(torch.uint8)
+
+    #     mask_scaled = ((mask[0] + 1) * 127.5).clamp(0, 255).to(torch.uint8)
+
+    #     os.makedirs("sample_training_images", exist_ok=True)
+
+    #     plt.imshow(img_scaled.cpu().numpy())
+    #     plt.savefig(f"sample_training_images/img_{i}.png")
+    #     plt.imshow(mask_scaled.cpu().numpy(), cmap="gray")
+    #     plt.savefig(f"sample_training_images/mask_{i}.png")
+
+    # breakpoint()
 
     logger.log("training...")
     TrainLoop(
@@ -79,7 +91,9 @@ def main():
         schedule_sampler=schedule_sampler,
         weight_decay=args.weight_decay,
         lr_anneal_steps=args.lr_anneal_steps,
-    ).run_loop()
+    # ).run_loop(max_steps=10)
+    ).run_loop(max_steps=200_000)
+
 
 
 def create_argparser():

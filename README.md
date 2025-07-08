@@ -137,3 +137,38 @@ If you find this work useful, please consider citing:
   urldate = {2024-08-19},
 }
 ```
+
+python main.py \
+--data_dir '/home/miguel/GI/1.5 - Synthetic Data Generation/diffuse-gen/diffuse-gen/guided_diffusion/segmented-images/masked-images' \
+--output_path '/home/miguel/GI/1.5 - Synthetic Data Generation/diffuse-gen/diffuse-gen/image_samples' \
+--model_path '/home/miguel/GI/1.5 - Synthetic Data Generation/diffuse-gen/diffuse-gen/checkpoints/model200000.pt' \
+--cluster_model_dir 'clustering' \
+--diff_iter 100 \
+--timestep_respacing 200 \
+--skip_timesteps 80 \
+--model_output_size 256 \
+--num_samples 1 \
+--batch_size 1 \
+--use_noise_aug_all \
+--use_colormatch \
+-fti -sty -inp -spi
+
+
+python '/home/miguel/GI/1.5 - Synthetic Data Generation/diffuse-gen/diffuse-gen/main.py' \
+--data_dir '/home/miguel/GI/1.5 - Synthetic Data Generation/diffuse-gen/diffuse-gen/guided_diffusion/segmented-images-madison/masked-images' \
+--output_path '/home/miguel/GI/1.5 - Synthetic Data Generation/diffuse-gen/diffuse-gen/image_samples' \
+--model_path '/home/miguel/GI/1.5 - Synthetic Data Generation/diffuse-gen/diffuse-gen/checkpoints/diffgen-2025-06-11-23-11/model300000.pt' \
+--cluster_model_dir 'clustering' \
+--diff_iter 100 \
+--timestep_respacing 200 \
+--skip_timesteps 80 \
+--model_output_size 256 \
+--num_samples 1 \
+--batch_size 1 \
+--use_noise_aug_all \
+--use_colormatch \
+-fti -sty -inp -spi
+
+
+
+python guided_diffusion/image_train.py --data_dir '/home/miguel/GI/1.5 - Synthetic Data Generation/diffuse-gen/diffuse-gen/guided_diffusion/segmented-images' --image_size 256 --out_dir checkpoints --batch_size 1
