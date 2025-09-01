@@ -1,3 +1,5 @@
+# Synthesize samples with the diffusion model
+
 from optimization.image_editor import ImageEditor
 from optimization.arguments import get_arguments
 import os
@@ -12,14 +14,6 @@ if __name__ == "__main__":
         base_model_path = args.cluster_model_dir 
         for i in range(args.start_index, args.end_index + 1):
             path = None
-            # split = base_model_path.split("/")
-            # filename = f"cluster_{i}_" + split[-1]
-            # split[-1] = filename
-            # path = "/".join(split)
-            # # Check if file exists
-            # if not os.path.isfile(path):
-            #     print(f"Cluster {i} does not exist")
-            #     continue
             # Go through base_model_path and check that file starts with cluster_{i}_
             for filename in os.listdir(base_model_path):
                 if filename.startswith(f"cluster_{i}_"):

@@ -3,10 +3,13 @@ import functools
 import os
 
 import blobfile as bf
+from datetime import datetime
 import torch as th
+import pandas as pd
 import torch.distributed as dist
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
 from torch.optim import AdamW
+from tqdm import tqdm
 
 from . import dist_util, logger
 from .fp16_util import MixedPrecisionTrainer
@@ -23,9 +26,13 @@ class TrainLoop:
     def __init__(
         self,
         *,
+        cv_subject,
+        singan_augmented_dataset,
+        skip_validation,
         model,
         diffusion,
         data,
+        validation_data,
         batch_size,
         microbatch,
         lr,
@@ -40,9 +47,13 @@ class TrainLoop:
         weight_decay=0.0,
         lr_anneal_steps=0,
     ):
+        self.cv_subject = cv_subject
+        self.skip_validation = skip_validation
+        self.singan_augmented_dataset = singan_augmented_dataset
         self.model = model
         self.diffusion = diffusion
         self.data = data
+        self.validation_data = validation_data
         self.batch_size = batch_size
         self.microbatch = microbatch if microbatch > 0 else batch_size
         self.lr = lr
@@ -58,6 +69,7 @@ class TrainLoop:
         self.use_fp16 = use_fp16
         self.fp16_scale_growth = fp16_scale_growth
         self.schedule_sampler = schedule_sampler or UniformSampler(diffusion)
+        self.schedule_sampler_val = schedule_sampler or UniformSampler(diffusion)
         self.weight_decay = weight_decay
         self.lr_anneal_steps = lr_anneal_steps
 
@@ -153,6 +165,10 @@ class TrainLoop:
             self.opt.load_state_dict(state_dict)
 
     def run_loop(self, max_steps=None):
+        loss_data_list = []
+        datestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        output_file = f'/home/miguel/GI/1 - Segmentation/Synthesis-performance-n-samples/tmp_output/losses-{self.cv_subject}-{datestamp}{'-singan-augmented' if self.singan_augmented_dataset else ''}.csv'
+
         while (
             not self.lr_anneal_steps
             or self.step + self.resume_step < self.lr_anneal_steps
@@ -162,7 +178,35 @@ class TrainLoop:
             batch, mask, cond = next(self.data)
             # Concatenate the mask to the batch.
             batch = th.cat([batch, mask.unsqueeze(1)], dim=1)
-            self.run_step(batch, cond)
+            train_loss = self.run_step(batch, cond)
+
+            # Test on the validation dataset
+            if self.validation_data: #and self.step % 300 == 0:
+                val_losses = []
+                
+                i = 0
+                for batch, mask, cond in tqdm(self.validation_data, desc="Validation"):
+                    if i == 72:
+                        break
+                    # reconstruct your input
+                    batch = th.cat([batch, mask.unsqueeze(1)], dim=1)
+                    # evaluate this batch
+                    loss = self.eval_batch_data(batch, cond)
+                    # if eval_batch_data returns a tensor, extract float
+                    if isinstance(loss, th.Tensor):
+                        loss = loss.item()
+                    val_losses.append(loss)
+                    i += 1
+
+                # compute average over all validation batches
+                avg_val_loss = sum(val_losses) / len(val_losses)
+                loss_data_list.append({
+                    'step': self.step,
+                    'train_loss': train_loss,
+                    'val_loss': avg_val_loss
+                })
+                pd.DataFrame(loss_data_list).to_csv(output_file)
+
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
             if self.step % self.save_interval == 0:
@@ -176,15 +220,24 @@ class TrainLoop:
             self.save()
 
     def run_step(self, batch, cond):
-        self.forward_backward(batch, cond)
+        mean_loss = self.forward_backward(batch, cond)
         took_step = self.mp_trainer.optimize(self.opt)
         if took_step:
             self._update_ema()
+        
+
+        # Evaluation loss:
+        # - Identical process to forward_backward, but we instead acquire a loss value running through the LOO evaluation set
+        # - Then we track this and export it.
+        # - We should expect it to behave similarly to training loss, otherwise overfitting occurred.
+
         self._anneal_lr()
         self.log_step()
+        return mean_loss
 
     def forward_backward(self, batch, cond):
         self.mp_trainer.zero_grad()
+        all_losses = []
         for i in range(0, batch.shape[0], self.microbatch):
             micro = batch[i : i + self.microbatch].to(dist_util.dev())
             micro_cond = {
@@ -192,6 +245,7 @@ class TrainLoop:
                 for k, v in cond.items()
             }
             last_batch = (i + self.microbatch) >= batch.shape[0]
+
             t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
 
             compute_losses = functools.partial(
@@ -214,10 +268,48 @@ class TrainLoop:
                 )
 
             loss = (losses["loss"] * weights).mean()
+            all_losses.append(loss)
             log_loss_dict(
                 self.diffusion, t, {k: v * weights for k, v in losses.items()}
             )
+
             self.mp_trainer.backward(loss)
+        
+        mean_loss = th.stack(all_losses).mean()
+        return mean_loss.item()
+
+    def eval_batch_data(self, batch, cond):
+        all_losses = []
+        for i in range(0, batch.shape[0], self.microbatch):
+            micro = batch[i : i + self.microbatch].to(dist_util.dev())
+            micro_cond = {
+                k: v[i : i + self.microbatch].to(dist_util.dev())
+                for k, v in cond.items()
+            }
+            last_batch = (i + self.microbatch) >= batch.shape[0]
+
+            t, weights = self.schedule_sampler_val.sample(micro.shape[0], dist_util.dev())
+
+            compute_losses = functools.partial(
+                self.diffusion.training_losses,
+                self.ddp_model,
+                micro,
+                t,
+                model_kwargs=micro_cond,
+            )
+
+            if last_batch or not self.use_ddp:
+                losses = compute_losses()
+            else:
+                with self.ddp_model.no_sync():
+                    losses = compute_losses()
+
+            loss = (losses["loss"] * weights).mean()
+            all_losses.append(loss)
+
+
+        mean_loss = th.stack(all_losses).mean()
+        return mean_loss.item()
 
     def _update_ema(self):
         for rate, params in zip(self.ema_rate, self.ema_params):

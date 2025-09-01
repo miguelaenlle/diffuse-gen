@@ -45,6 +45,9 @@ def model_and_diffusion_defaults():
     Defaults for image training.
     """
     res = dict(
+        cv_subject="",
+        gpu_id=0,
+        singan_augmented_dataset=False,
         image_size=64,
         num_channels=128,
         num_res_blocks=2,
@@ -61,6 +64,7 @@ def model_and_diffusion_defaults():
         resblock_updown=False,
         use_fp16=False,
         use_new_attention_order=False,
+        skip_validation = False
     )
     res.update(diffusion_defaults())
     return res
@@ -73,6 +77,10 @@ def classifier_and_diffusion_defaults():
 
 
 def create_model_and_diffusion(
+    cv_subject,
+    gpu_id,
+    skip_validation,
+    singan_augmented_dataset,
     image_size,
     class_cond,
     learn_sigma,

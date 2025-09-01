@@ -20,7 +20,6 @@ from guided_diffusion.script_util import (
 )
 from guided_diffusion.train_util import TrainLoop
 
-
 def main():
     args = create_argparser().parse_args()
 
@@ -39,7 +38,11 @@ def main():
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
-    model.to(dist_util.dev())
+
+    if not args.gpu_id:
+        model.to(dist_util.dev())
+    else:
+        model.to(f"cuda:{args.gpu_id}")
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
     logger.log("creating data loader...")
     data = load_data(
@@ -48,37 +51,23 @@ def main():
         image_size=args.image_size,
         class_cond=args.class_cond,
     )
-    # batch.shape = (batch_size, 3, image_size, image_size)
-    # Run the following to see what the batch looks like:
-    # for i in range(10):
-    #     batch, mask, cond, img_path, mask_path = next(data)
-    #     print(batch.shape)
-    #     print(mask.shape)
-    #     print(batch.min())
-    #     print(batch.max())
-    #     print(mask.min())
-    #     print(mask.max())
 
-    #     img = batch[0].permute(1, 2, 0)
-
-    #     img_scaled = ((img + 1) * 127.5).clamp(0, 255).to(torch.uint8)
-
-    #     mask_scaled = ((mask[0] + 1) * 127.5).clamp(0, 255).to(torch.uint8)
-
-    #     os.makedirs("sample_training_images", exist_ok=True)
-
-    #     plt.imshow(img_scaled.cpu().numpy())
-    #     plt.savefig(f"sample_training_images/img_{i}.png")
-    #     plt.imshow(mask_scaled.cpu().numpy(), cmap="gray")
-    #     plt.savefig(f"sample_training_images/mask_{i}.png")
-
-    # breakpoint()
+    validation_data = load_data(
+        data_dir = args.validation_dir,
+        batch_size = args.batch_size,
+        image_size = args.image_size,
+        class_cond = args.class_cond,
+    ) if args.validation_dir else None
 
     logger.log("training...")
     TrainLoop(
+        cv_subject=args.cv_subject,
+        skip_validation=args.skip_validation,
+        singan_augmented_dataset=args.singan_augmented_dataset,
         model=model,
         diffusion=diffusion,
         data=data,
+        validation_data=validation_data,
         batch_size=args.batch_size,
         microbatch=args.microbatch,
         lr=args.lr,
@@ -91,16 +80,14 @@ def main():
         schedule_sampler=schedule_sampler,
         weight_decay=args.weight_decay,
         lr_anneal_steps=args.lr_anneal_steps,
-    # ).run_loop(max_steps=10)
     ).run_loop(max_steps=200_000)
-
-
 
 def create_argparser():
     # Remember to set --data_dir, --image_size 256, use_fp16=True
     defaults = model_and_diffusion_defaults()
     defaults.update(dict(
         data_dir="",
+        validation_dir="",
         out_dir=None,
         schedule_sampler="uniform",
         lr=1e-4,

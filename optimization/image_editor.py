@@ -559,10 +559,10 @@ class ImageEditor:
             # plt.savefig(f"mask_{it}.png")
             all_images[style_img_path] = curr
 
-            if it % 3 == 0:
+            if it % 10 == 0:
                 logger.log(f"Saving {it} images...")
                 self._save(all_images, styled_images)
 
-        if it % 3 != 0: # prevent saving twice
+        if it % 10 != 0: # prevent saving twice
             logger.log(f"Saving {it} images...")        
             self._save(all_images, styled_images)
